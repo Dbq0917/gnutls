@@ -574,6 +574,15 @@ int gnutls_session_ticket_enable_client(gnutls_session_t session)
  * To avoid leaking that key, use gnutls_memset() prior to
  * releasing it.
  *
+ * The key must be either 64 or 128 bytes long.  In the latter case,
+ * the first 64 bytes are the current master key and the
+ * second 64 bytes are a retired master key.  New tickets are always
+ * encrypted with the current master key, while tickets encrypted with
+ * either the current or the retired master key are accepted.  This
+ * allows replacing the master key without invalidating outstanding
+ * tickets; the retired key can be erased once all tickets issued with
+ * it have expired.
+ *
  * The default ticket expiration time can be overridden using
  * gnutls_db_set_cache_expiration().
  *
@@ -587,8 +596,9 @@ int gnutls_session_ticket_enable_server(gnutls_session_t session,
 {
 	int ret;
 
-	if (!session || !key || key->size != TICKET_MASTER_KEY_SIZE ||
-	    !key->data) {
+	if (!session || !key || !key->data ||
+	    (key->size != TICKET_MASTER_KEY_SIZE &&
+	     key->size != TICKET_MASTER_KEY_SET_SIZE)) {
 		gnutls_assert();
 		return GNUTLS_E_INVALID_REQUEST;
 	}

@@ -1958,6 +1958,13 @@ to prevent the keys from becoming long-term keys
 and as such preserve forward-secrecy in the issued session tickets. If no explicit key rotation interval
 is provided, GnuTLS will rotate them every 18 hours by default.
 
+To replace the master key without invalidating outstanding tickets, pass a 128-byte
+key to @funcref{gnutls_session_ticket_enable_server}: the first 64 bytes are the
+current master key and the second 64 bytes are a retired one. New tickets are
+encrypted only with the current master key, while tickets encrypted with either
+master key are accepted. The retired key should be erased once the tickets issued
+with it have expired.
+
 The master key can be shared between processes or between systems. Processes which share the same master key
 will generate the same rotated subkeys, assuming they share the same time (irrespective of timezone differences).
 

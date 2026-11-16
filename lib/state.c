@@ -688,6 +688,13 @@ int gnutls_init(gnutls_session_t *session, unsigned int flags)
 				      TICKET_MASTER_KEY_SIZE);
 	_gnutls_memory_mark_undefined((*session)->key.initial_stek,
 				      TICKET_MASTER_KEY_SIZE);
+	_gnutls_memory_mark_undefined((*session)->key.retired_ticket_key,
+				      TICKET_MASTER_KEY_SIZE);
+	_gnutls_memory_mark_undefined(
+		(*session)->key.previous_retired_ticket_key,
+		TICKET_MASTER_KEY_SIZE);
+	_gnutls_memory_mark_undefined((*session)->key.initial_retired_stek,
+				      TICKET_MASTER_KEY_SIZE);
 
 	handshake_internal_state_clear1(*session);
 
@@ -829,6 +836,28 @@ void gnutls_deinit(gnutls_session_t session)
 				    TICKET_MASTER_KEY_SIZE);
 	gnutls_memset(&session->key.initial_stek, 0, TICKET_MASTER_KEY_SIZE);
 	_gnutls_memory_mark_undefined(session->key.initial_stek,
+				      TICKET_MASTER_KEY_SIZE);
+
+	_gnutls_memory_mark_defined(session->key.retired_ticket_key,
+				    TICKET_MASTER_KEY_SIZE);
+	gnutls_memset(&session->key.retired_ticket_key, 0,
+		      TICKET_MASTER_KEY_SIZE);
+	_gnutls_memory_mark_undefined(session->key.retired_ticket_key,
+				      TICKET_MASTER_KEY_SIZE);
+
+	_gnutls_memory_mark_defined(session->key.previous_retired_ticket_key,
+				    TICKET_MASTER_KEY_SIZE);
+	gnutls_memset(&session->key.previous_retired_ticket_key, 0,
+		      TICKET_MASTER_KEY_SIZE);
+	_gnutls_memory_mark_undefined(
+		session->key.previous_retired_ticket_key,
+		TICKET_MASTER_KEY_SIZE);
+
+	_gnutls_memory_mark_defined(session->key.initial_retired_stek,
+				    TICKET_MASTER_KEY_SIZE);
+	gnutls_memset(&session->key.initial_retired_stek, 0,
+		      TICKET_MASTER_KEY_SIZE);
+	_gnutls_memory_mark_undefined(session->key.initial_retired_stek,
 				      TICKET_MASTER_KEY_SIZE);
 
 	gnutls_mutex_deinit(&session->internals.post_negotiation_lock);

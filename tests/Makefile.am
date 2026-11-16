@@ -238,7 +238,8 @@ ctests += mini-record-2 simple gnutls_hmac_fast set_pkcs12_cred cert certuniquei
 	 dss-sig-val sign-pk-api tls-session-ext-override record-pad \
 	 tls13-server-kx-neg gnutls_ext_raw_parse_dtls key-export-pkcs8 \
 	 null_retrieve_function tls-record-size-limit tls-crt_type-neg \
-	 resume-with-stek-expiration resume-with-previous-stek rawpk-api \
+	 resume-with-stek-expiration resume-with-previous-stek \
+	 resume-with-retired-stek rawpk-api \
 	 tls-record-size-limit-asym dh-compute ecdh-compute sign-verify-data-newapi \
 	 sign-verify-newapi sign-verify-deterministic iov aead-cipher-vec \
 	 tls13-without-timeout-func buffer status-request-revoked \

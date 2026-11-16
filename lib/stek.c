@@ -106,6 +106,17 @@ static int64_t totp_previous(gnutls_session_t session)
 	return result;
 }
 
+static int totp_key(gnutls_session_t session, const uint8_t *secret_data,
+		    uint64_t t, uint8_t key[TICKET_MASTER_KEY_SIZE])
+{
+	gnutls_datum_t secret;
+
+	secret.data = (uint8_t *)secret_data;
+	secret.size = TICKET_MASTER_KEY_SIZE;
+
+	return totp_sha3(session, t, &secret, key);
+}
+
 static void call_rotation_callback(gnutls_session_t session,
 				   uint8_t key[TICKET_MASTER_KEY_SIZE],
 				   uint64_t t)
@@ -125,17 +136,13 @@ static void call_rotation_callback(gnutls_session_t session,
 static int rotate(gnutls_session_t session)
 {
 	int64_t t;
-	gnutls_datum_t secret;
 	uint8_t key[TICKET_MASTER_KEY_SIZE];
 
 	/* Do we need to calculate new totp? */
 	t = totp_next(session);
 	if (t > 0) {
-		secret.data = session->key.initial_stek;
-		secret.size = TICKET_MASTER_KEY_SIZE;
-
 		/* Generate next key */
-		if (totp_sha3(session, t, &secret, key) < 0) {
+		if (totp_key(session, session->key.initial_stek, t, key) < 0) {
 			gnutls_assert();
 			return GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE;
 		}
@@ -159,17 +166,22 @@ static int rotate_back_and_peek(gnutls_session_t session,
 				uint8_t key[TICKET_MASTER_KEY_SIZE])
 {
 	int64_t t;
-	gnutls_datum_t secret;
 
 	/* Get the previous TOTP */
 	t = totp_previous(session);
 	if (t < 0)
 		return gnutls_assert_val(t);
 
-	secret.data = session->key.initial_stek;
-	secret.size = TICKET_MASTER_KEY_SIZE;
+	if (totp_key(session, session->key.initial_stek, t, key) < 0)
+		return gnutls_assert_val(GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE);
 
-	if (totp_sha3(session, t, &secret, key) < 0)
+	return 0;
+}
+
+static int peek_retired(gnutls_session_t session, uint64_t t,
+			uint8_t key[TICKET_MASTER_KEY_SIZE])
+{
+	if (totp_key(session, session->key.initial_retired_stek, t, key) < 0)
 		return gnutls_assert_val(GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE);
 
 	return 0;
@@ -257,6 +269,7 @@ int _gnutls_get_session_ticket_decryption_key(gnutls_session_t session,
 					      gnutls_datum_t *enc_key)
 {
 	int retval;
+	int64_t t;
 	uint8_t *key_data;
 
 	if (unlikely(session == NULL || ticket_data == NULL ||
@@ -303,6 +316,58 @@ int _gnutls_get_session_ticket_decryption_key(gnutls_session_t session,
 		goto key_found;
 	}
 
+	/*
+	 * The current and previous keys derived from the retired master
+	 * are accepted for decryption only.  This lets an application
+	 * replace the master key without invalidating outstanding tickets.
+	 */
+	if (session->key.retired_stek_initialized) {
+		_gnutls_memory_mark_defined(session->key.retired_ticket_key,
+					    TICKET_MASTER_KEY_SIZE);
+		retval = peek_retired(session,
+				      session->key.totp.last_result,
+				      session->key.retired_ticket_key);
+		if (retval < 0) {
+			_gnutls_memory_mark_undefined(
+				session->key.retired_ticket_key,
+				TICKET_MASTER_KEY_SIZE);
+			return gnutls_assert_val(retval);
+		}
+
+		if (memeq(ticket_data->data,
+			  &session->key.retired_ticket_key[NAME_POS],
+			  TICKET_KEY_NAME_SIZE)) {
+			key_data = session->key.retired_ticket_key;
+			goto key_found;
+		}
+
+		/* Check the previous TOTP step of the retired master too. */
+		t = totp_previous(session);
+		if (t > 0) {
+			_gnutls_memory_mark_defined(
+				session->key.previous_retired_ticket_key,
+				TICKET_MASTER_KEY_SIZE);
+			retval = peek_retired(
+				session, t,
+				session->key.previous_retired_ticket_key);
+			if (retval < 0) {
+				_gnutls_memory_mark_undefined(
+					session->key.previous_retired_ticket_key,
+					TICKET_MASTER_KEY_SIZE);
+				return gnutls_assert_val(retval);
+			}
+
+			if (memeq(ticket_data->data,
+				  &session->key
+					   .previous_retired_ticket_key[NAME_POS],
+				  TICKET_KEY_NAME_SIZE)) {
+				key_data =
+					session->key.previous_retired_ticket_key;
+				goto key_found;
+			}
+		}
+	}
+
 	return GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE;
 
 key_found:
@@ -337,15 +402,30 @@ key_found:
 int _gnutls_initialize_session_ticket_key_rotation(gnutls_session_t session,
 						   const gnutls_datum_t *key)
 {
-	if (unlikely(session == NULL || key == NULL))
+	if (unlikely(session == NULL || key == NULL || key->data == NULL))
 		return gnutls_assert_val(GNUTLS_E_INTERNAL_ERROR);
+
+	if (key->size != TICKET_MASTER_KEY_SIZE &&
+	    key->size != TICKET_MASTER_KEY_SET_SIZE)
+		return gnutls_assert_val(GNUTLS_E_INVALID_REQUEST);
 
 	if (unlikely(session->key.totp.last_result != 0))
 		return GNUTLS_E_INVALID_REQUEST;
 
 	_gnutls_memory_mark_defined(session->key.initial_stek,
 				    TICKET_MASTER_KEY_SIZE);
-	memcpy(session->key.initial_stek, key->data, key->size);
+	memcpy(session->key.initial_stek, key->data, TICKET_MASTER_KEY_SIZE);
+
+	if (key->size == TICKET_MASTER_KEY_SET_SIZE) {
+		_gnutls_memory_mark_defined(session->key.initial_retired_stek,
+					    TICKET_MASTER_KEY_SIZE);
+		memcpy(session->key.initial_retired_stek,
+		       key->data + TICKET_MASTER_KEY_SIZE,
+		       TICKET_MASTER_KEY_SIZE);
+		session->key.retired_stek_initialized = true;
+	} else {
+		session->key.retired_stek_initialized = false;
+	}
 
 	session->key.stek_initialized = true;
 	session->key.totp.was_rotated = 0;

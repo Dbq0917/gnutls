@@ -528,6 +528,7 @@ typedef struct auth_cred_st {
 /* session ticket definitions */
 #define TICKET_MASTER_KEY_SIZE \
 	(TICKET_KEY_NAME_SIZE + TICKET_CIPHER_KEY_SIZE + TICKET_MAC_SECRET_SIZE)
+#define TICKET_MASTER_KEY_SET_SIZE (2 * TICKET_MASTER_KEY_SIZE)
 #define TICKET_KEY_NAME_SIZE 16
 #define TICKET_CIPHER_KEY_SIZE 32
 #define TICKET_MAC_SECRET_SIZE 16
@@ -649,11 +650,19 @@ struct gnutls_key_st {
 		/* Static buffer for the previous key, whenever we need it */
 		previous_ticket_key[TICKET_MASTER_KEY_SIZE],
 		/* Initial key supplied by the caller */
-		initial_stek[TICKET_MASTER_KEY_SIZE];
+		initial_stek[TICKET_MASTER_KEY_SIZE],
+		/* Derived from the retired initial key; decrypt-only */
+		retired_ticket_key[TICKET_MASTER_KEY_SIZE],
+		/* Static buffer for the previous retired key */
+		previous_retired_ticket_key[TICKET_MASTER_KEY_SIZE],
+		/* Retired initial key supplied by the caller */
+		initial_retired_stek[TICKET_MASTER_KEY_SIZE];
 
 	/* Whether the initial_stek is set through
 	 * gnutls_session_ticket_enable_server() */
 	bool stek_initialized;
+	/* Whether initial_retired_stek was supplied by the caller */
+	bool retired_stek_initialized;
 
 	/* this is used to hold the peers authentication data
 	 */
